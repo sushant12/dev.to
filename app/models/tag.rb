@@ -18,6 +18,7 @@ class Tag < ActsAsTaggableOn::Tag
   attr_accessor :tag_moderator_id, :remove_moderator_id
 
   belongs_to :badge, optional: true
+  has_one :sponsorship, as: :sponsorable, inverse_of: :sponsorable, dependent: :destroy
 
   mount_uploader :profile_image, ProfileImageUploader
   mount_uploader :social_image, ProfileImageUploader
