@@ -6,14 +6,15 @@ class ClassifiedListingsController < ApplicationController
   before_action :authenticate_user!, only: %i[edit update new dashboard]
 
   def index
-    @displayed_classified_listing = ClassifiedListing.find_by!(slug: params[:slug]) if params[:slug]
+    published_listings = ClassifiedListing.where(published: true)
+    @displayed_classified_listing = published_listings.find_by(slug: params[:slug]) if params[:slug]
 
     if params[:view] == "moderate"
       return redirect_to "/internal/listings/#{@displayed_classified_listing.id}/edit"
     end
 
     @classified_listings = if params[:category].blank?
-                             ClassifiedListing.where(published: true).
+                             published_listings.
                                order("bumped_at DESC").
                                includes(:user, :organization, :taggings).
                                limit(12)
@@ -65,16 +66,18 @@ class ClassifiedListingsController < ApplicationController
     # NOTE: this should probably be split in three different actions: bump, unpublish, publish
     if listing_params[:action] == "bump"
       cost = ClassifiedListing.cost_by_category(@classified_listing.category)
-      if current_user.credits.unspent.size >= cost
-        ActiveRecord::Base.transaction do
-          Credits::Buyer.call(
-            purchaser: current_user,
-            purchase: @classified_listing,
-            cost: cost,
-          )
 
-          raise ActiveRecord::Rollback unless bump_listing
-        end
+      org = Organization.find_by(id: @classified_listing.organization_id)
+
+      available_org_credits = org.credits.unspent if org
+      available_user_credits = current_user.credits.unspent
+
+      if org && available_org_credits.size >= cost
+        charge_credits_before_bump(org, cost)
+      elsif available_user_credits.size >= cost
+        charge_credits_before_bump(current_user, cost)
+      else
+        redirect_to(credits_path, notice: "Not enough available credits") && return
       end
     elsif listing_params[:action] == "unpublish"
       unpublish_listing
@@ -105,7 +108,7 @@ class ClassifiedListingsController < ApplicationController
   def create_listing(purchaser, cost)
     successful_transaction = false
     ActiveRecord::Base.transaction do
-      # substract credits
+      # subtract credits
       Credits::Buyer.call(
         purchaser: purchaser,
         purchase: @classified_listing,
@@ -133,6 +136,18 @@ class ClassifiedListingsController < ApplicationController
       @classified_listing.cached_tag_list = listing_params[:tag_list]
       @organizations = current_user.organizations
       render :new
+    end
+  end
+
+  def charge_credits_before_bump(purchaser, cost)
+    ActiveRecord::Base.transaction do
+      Credits::Buyer.call(
+        purchaser: purchaser,
+        purchase: @classified_listing,
+        cost: cost,
+      )
+
+      raise ActiveRecord::Rollback unless bump_listing
     end
   end
 

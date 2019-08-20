@@ -8,9 +8,49 @@ RSpec.describe "ClassifiedListings", type: :request do
         title: "something",
         body_markdown: "something else",
         category: "cfp",
-        tag_list: ""
+        tag_list: "",
+        contact_via_connect: true
       }
     }
+  end
+
+  describe "GET /listings" do
+    let(:listing) { create(:classified_listing, user: user) }
+    let(:expired_listing) { create(:classified_listing, user: user) }
+
+    before do
+      sign_in user
+      create_list(:credit, 25, user: user)
+    end
+
+    it "returns text/html and has status 200" do
+      get "/listings"
+      expect(response.content_type).to eq("text/html")
+      expect(response).to have_http_status(:ok)
+    end
+
+    context "when the user has no params" do
+      it "shows all active listings" do
+        get "/listings"
+        expect(response.body).to include("classifieds-container")
+      end
+    end
+
+    context "when the user has category and slug params for active listing" do
+      it "shows that direct listing" do
+        get "/listings", params: { category: `#{listing.category}`, slug: `#{listing.slug}` }
+        expect(response.body).to include(listing.title)
+      end
+    end
+
+    context "when the user has category and slug params for expired listing" do
+      it "shows only active listings from that category" do
+        expired_listing.published = false
+        expired_listing.save
+        get "/listings", params: { category: `#{expired_listing.category}`, slug: `#{expired_listing.slug}` }
+        expect(response.body).not_to include(expired_listing.title)
+      end
+    end
   end
 
   describe "GET /listings/new" do
@@ -160,6 +200,8 @@ RSpec.describe "ClassifiedListings", type: :request do
 
   describe "PUT /listings/:id" do
     let(:listing) { create(:classified_listing, user: user) }
+    let(:organization) { create(:organization) }
+    let(:org_listing) { create(:classified_listing, user: user, organization: organization) }
 
     before do
       sign_in user
@@ -168,10 +210,11 @@ RSpec.describe "ClassifiedListings", type: :request do
     context "when the bump action is called" do
       let(:params) { { classified_listing: { action: "bump" } } }
 
-      it "does not bump the listing if the use has not enough credits" do
+      it "does not bump the user listing and redirects to credits if the user has not enough credits" do
         previous_bumped_at = listing.bumped_at
         put "/listings/#{listing.id}", params: params
         expect(listing.reload.bumped_at.to_i).to eq(previous_bumped_at.to_i)
+        expect(response.body).to redirect_to("/credits")
       end
 
       it "does not subtract spent credits if the user has not enough credits" do
@@ -197,6 +240,27 @@ RSpec.describe "ClassifiedListings", type: :request do
           put "/listings/#{listing.id}", params: params
         end.to change(user.credits.spent, :size).by(cost)
         expect(listing.reload.bumped_at >= previous_bumped_at).to eq(true)
+      end
+
+      it "bumps the org listing using org credits before user credits" do
+        cost = ClassifiedListing.cost_by_category(org_listing.category)
+        create_list(:credit, cost, organization: organization)
+        create_list(:credit, cost, user: user)
+        previous_bumped_at = org_listing.bumped_at
+        expect do
+          put "/listings/#{org_listing.id}", params: params
+        end.to change(organization.credits.spent, :size).by(cost)
+        expect(org_listing.reload.bumped_at >= previous_bumped_at).to eq(true)
+      end
+
+      it "bumps the org listing using user credits if org credits insufficient and user credits are" do
+        cost = ClassifiedListing.cost_by_category(org_listing.category)
+        create_list(:credit, cost, user: user)
+        previous_bumped_at = org_listing.bumped_at
+        expect do
+          put "/listings/#{org_listing.id}", params: params
+        end.to change(user.credits.spent, :size).by(cost)
+        expect(org_listing.reload.bumped_at >= previous_bumped_at).to eq(true)
       end
     end
   end

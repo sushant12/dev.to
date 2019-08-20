@@ -1,145 +1,197 @@
 require "rails_helper"
 
 RSpec.describe "Api::V0::Articles", type: :request do
-  let(:user1) { create(:user) }
-  let(:user2) { create(:user) }
-
   def json_response
     JSON.parse(response.body)
   end
 
   describe "GET /api/articles" do
+    let_it_be(:article) { create(:article) }
+
     it "returns json response" do
-      get "/api/articles"
+      get api_articles_path
       expect(response.content_type).to eq("application/json")
     end
 
-    it "returns featured articles with no params" do
-      create(:article)
+    it "returns featured articles if no param is given" do
       create(:article, featured: true)
-      create(:article, featured: true)
-      get "/api/articles"
-      expect(JSON.parse(response.body).size).to eq(2)
+      get api_articles_path
+      expect(json_response.size).to eq(1)
     end
 
-    it "returns user articles if username param is present" do
-      create(:article, user_id: user1.id)
-      create(:article, user_id: user1.id)
-      create(:article, user_id: user2.id)
-      get "/api/articles?username=#{user1.username}"
-      expect(JSON.parse(response.body).size).to eq(2)
+    it "returns user's articles for the given username" do
+      user = create(:user)
+      create_list(:article, 2, user: user)
+      get api_articles_path(username: user.username)
+      expect(json_response.size).to eq(2)
     end
 
-    it "returns no articles if username param is unknown" do
-      create(:article, user_id: user1.id)
-      get "/api/articles?username=foobar"
-      expect(JSON.parse(response.body).size).to eq(0)
+    it "returns nothing if given user is not found" do
+      get api_articles_path(username: "foobar")
+      expect(json_response.size).to eq(0)
     end
 
-    it "returns organization articles if username param is present" do
+    it "returns org's articles if org's slug is given" do
+      user = article.user
       org = create(:organization)
-      create(:article, user_id: user1.id)
-      create(:article, user_id: user1.id, organization_id: org.id)
-      create(:article, user_id: user1.id, organization_id: org.id)
-      create(:article, user_id: user1.id)
-      create(:article, user_id: user2.id)
-      get "/api/articles?username=#{org.slug}"
-      expect(JSON.parse(response.body).size).to eq(2)
+      create(:article, user: user)
+      create(:article, user: user, organization: org)
+      get api_articles_path(username: org.slug)
+      expect(json_response.size).to eq(1)
     end
 
-    it "returns tag articles if tag param is present" do
-      article = create(:article)
-      get "/api/articles?tag=#{article.tag_list.first}"
-      expect(JSON.parse(response.body).size).to eq(1)
+    it "returns tag's articles" do
+      get api_articles_path(tag: article.tag_list.first)
+      expect(json_response.size).to eq(1)
     end
 
-    it "returns top tag articles if tag param is present" do
-      article = create(:article)
-      get "/api/articles?tag=#{article.tag_list.first}&top=7"
-      expect(JSON.parse(response.body).size).to eq(1)
+    it "returns top tag articles if tag and top param is present" do
+      get api_articles_path(tag: article.tag_list.first, top: "7")
+      expect(json_response.size).to eq(1)
     end
 
-    it "returns top articles if tag param is present" do
-      create(:article)
-      article = create(:article)
-      article.update_column(:published_at, 10.days.ago)
-      get "/api/articles?top=7"
-      expect(JSON.parse(response.body).size).to eq(1)
+    it "returns top articles if top param is present" do
+      old_article = create(:article)
+      old_article.update_column(:published_at, 10.days.ago)
+      get api_articles_path(top: "7")
+      expect(json_response.size).to eq(1)
     end
 
     it "returns not tag articles if article and tag are not approved" do
-      article = create(:article, approved: false)
+      article.update_column(:approved, false)
       tag = Tag.find_by(name: article.tag_list.first)
       tag.update(requires_approval: true)
-      get "/api/articles?tag=#{tag.name}"
+
+      get api_articles_path(tag: tag.name)
       expect(JSON.parse(response.body).size).to eq(0)
+    end
+
+    it "returns flare tag in the response" do
+      create(:article, featured: true, tags: "discuss")
+
+      get api_articles_path
+      response_article = JSON.parse(response.body)[0]
+      expect(response_article["flare_tag"]).to be_present
+      expect(response_article["flare_tag"].keys).to eq(%w[name bg_color_hex text_color_hex])
+      expect(response_article["flare_tag"]["name"]).to eq("discuss")
     end
   end
 
   describe "GET /api/articles/:id" do
-    let(:article) { create(:article, published: true) }
+    let_it_be(:article) { create(:article) }
 
-    it "gets article based on ID" do
-      get "/api/articles/#{article.id}"
+    it "returns proper article" do
+      get api_article_path(article.id)
       expect(json_response["title"]).to eq(article.title)
-    end
-    
-    it "contains article markdown content" do
-      get "/api/articles/#{article.id}"
       expect(json_response["body_markdown"]).to eq(article.body_markdown)
-    end
-
-    it "fails with an unpublished article" do
-      article.update_columns(published: false)
-      get "/api/articles/#{article.id}"
-      expect(response).to have_http_status(:not_found)
-    end
-
-    it "fails with an unknown article ID" do
-      get "/api/articles/99999"
-      expect(response).to have_http_status(:not_found)
-    end
-
-    it "contains tags as an array" do
-      get "/api/articles/#{article.id}"
       expect(json_response["tags"]).to eq(article.decorate.cached_tag_list_array)
     end
 
-    it "contains all the relevant datetimes" do
+    it "returns all the relevant datetimes" do
       article.update_columns(
         edited_at: 1.minute.from_now,
         crossposted_at: 2.minutes.ago, last_comment_at: 30.seconds.ago
       )
-      get "/api/articles/#{article.id}"
+      get api_article_path(article.id)
       expect(json_response["created_at"]).to eq(article.created_at.utc.iso8601)
       expect(json_response["edited_at"]).to eq(article.edited_at.utc.iso8601)
       expect(json_response["crossposted_at"]).to eq(article.crossposted_at.utc.iso8601)
       expect(json_response["published_at"]).to eq(article.published_at.utc.iso8601)
       expect(json_response["last_comment_at"]).to eq(article.last_comment_at.utc.iso8601)
     end
+
+    it "fails with an unpublished article" do
+      article.update_columns(published: false)
+      get api_article_path(article.id)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "fails with an unknown article ID" do
+      get api_article_path("9999")
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "GET /api/articles/me" do
+    context "when request is unauthenticated" do
+      it "return unauthorized" do
+        get me_api_articles_path
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context "when request is authenticated" do
+      let_it_be(:user) { create(:user) }
+      let_it_be(:access_token) { create :doorkeeper_access_token, resource_owner: user }
+
+      it "works with bearer authorization" do
+        headers = { "authorization" => "Bearer #{access_token.token}", "content-type" => "application/json" }
+
+        get me_api_articles_path, headers: headers
+        expect(response.content_type).to eq("application/json")
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "return proper response specification" do
+        get me_api_articles_path, params: { access_token: access_token.token }
+        expect(response.content_type).to eq("application/json")
+        expect(response).to have_http_status(:ok)
+      end
+
+      it "return only user's articles including markdown" do
+        create(:article, user: user)
+        create(:article)
+        get me_api_articles_path, params: { access_token: access_token.token }
+        expect(json_response.length).to eq(1)
+        expect(json_response[0]["body_markdown"]).not_to be_nil
+      end
+
+      it "supports pagination" do
+        create_list(:article, 3, user: user)
+        get me_api_articles_path, params: { access_token: access_token.token, page: 2, per_page: 2 }
+        expect(json_response.length).to eq(1)
+      end
+
+      it "puts unpublished articles at the top" do
+        create(:article, user: user)
+        create(:article, published: false, published_at: nil, user: user)
+        get me_api_articles_path, params: { access_token: access_token.token }
+        expected_order = json_response.map { |resp| resp["published"] }
+        expect(expected_order).to eq([false, true])
+      end
+
+      it "orders unpublished articles by reverse order" do
+        older = create(:article, published: false, published_at: nil, user: user)
+        newer = nil
+        Timecop.travel(1.day.from_now) do
+          newer = create(:article, published: false, published_at: nil, user: user)
+        end
+        get me_api_articles_path, params: { access_token: access_token.token }
+        expected_order = json_response.map { |resp| resp["id"] }
+        expect(expected_order).to eq([newer.id, older.id])
+      end
+    end
   end
 
   describe "POST /api/articles" do
     let!(:api_secret) { create(:api_secret) }
     let!(:user) { api_secret.user }
-    let!(:path) { "/api/articles" }
-    let(:organization) { create(:organization) }
 
-    describe "when unauthorized" do
+    context "when unauthorized" do
       it "fails with no api key" do
-        post path, headers: { "content-type" => "application/json" }
+        post api_articles_path, headers: { "content-type" => "application/json" }
         expect(response).to have_http_status(:unauthorized)
       end
 
       it "fails with the wrong api key" do
-        post path, headers: { "api-key" => "foobar", "content-type" => "application/json" }
+        post api_articles_path, headers: { "api-key" => "foobar", "content-type" => "application/json" }
         expect(response).to have_http_status(:unauthorized)
       end
 
       it "fails with a failing secure compare" do
         allow(ActiveSupport::SecurityUtils).
           to receive(:secure_compare).and_return(false)
-        post path, headers: { "api-key" => api_secret.secret, "content-type" => "application/json" }
+        post api_articles_path, headers: { "api-key" => api_secret.secret, "content-type" => "application/json" }
         expect(response).to have_http_status(:unauthorized)
       end
     end
@@ -147,7 +199,15 @@ RSpec.describe "Api::V0::Articles", type: :request do
     describe "when authorized" do
       def post_article(**params)
         headers = { "api-key" => api_secret.secret, "content-type" => "application/json" }
-        post path, params: { article: params }.to_json, headers: headers
+        post api_articles_path, params: { article: params }.to_json, headers: headers
+      end
+
+      it "supports oauth's access_token" do
+        access_token = create(:doorkeeper_access_token, resource_owner_id: user.id)
+        headers = { "authorization" => "Bearer #{access_token.token}", "content-type" => "application/json" }
+
+        post api_articles_path, params: { article: { title: Faker::Book.title } }.to_json, headers: headers
+        expect(response).to have_http_status(:created)
       end
 
       it "fails if no params are given" do
@@ -263,6 +323,7 @@ RSpec.describe "Api::V0::Articles", type: :request do
       end
 
       it "creates an article on behalf of an organization" do
+        organization = create(:organization)
         create(:organization_membership, user: user, organization: organization)
         expect do
           post_article(
@@ -391,6 +452,19 @@ RSpec.describe "Api::V0::Articles", type: :request do
         put path, params: { article: params }.to_json, headers: headers
       end
 
+      it "supports oauth's access_token" do
+        access_token = create(:doorkeeper_access_token, resource_owner_id: user.id)
+        headers = { "authorization" => "Bearer #{access_token.token}", "content-type" => "application/json" }
+
+        title = Faker::Book.title + rand(100).to_s
+        body_markdown = "foobar"
+        params = { title: title, body_markdown: body_markdown }
+        put path, params: { article: params }.to_json, headers: headers
+        expect(response).to have_http_status(:ok)
+        expect(article.reload.title).to eq(title)
+        expect(article.body_markdown).to eq(body_markdown)
+      end
+
       it "returns not found if the article does not belong to the user" do
         article = create(:article, user: create(:user))
         headers = { "api-key" => api_secret.secret, "content-type" => "application/json" }
@@ -408,7 +482,7 @@ RSpec.describe "Api::V0::Articles", type: :request do
         expect(response).to have_http_status(:ok)
       end
 
-      it "does not update title if only given a title" do
+      it "does not update title if only given a title because the article has a front matter" do
         put_article(title: Faker::Book.title + rand(100).to_s)
         expect(response).to have_http_status(:ok)
         expect(article.reload.title).to eq(article.title)

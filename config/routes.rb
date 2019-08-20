@@ -1,6 +1,7 @@
 # rubocop:disable Metrics/BlockLength
 
 Rails.application.routes.draw do
+  use_doorkeeper
   devise_for :users, controllers: {
     omniauth_callbacks: "omniauth_callbacks",
     session: "sessions",
@@ -36,6 +37,12 @@ Rails.application.routes.draw do
     resources :feedback_messages, only: %i[index show]
     resources :listings, only: %i[index edit update destroy], controller: "classified_listings"
     resources :pages, only: %i[index new create edit update destroy]
+    resources :podcasts, only: %i[index edit update destroy] do
+      member do
+        post :add_admin
+        delete :remove_admin
+      end
+    end
     resources :reactions, only: [:update]
     resources :chat_channels, only: %i[index create update]
     resources :reports, only: %i[index show], controller: "feedback_messages" do
@@ -56,7 +63,9 @@ Rails.application.routes.draw do
         post "recover_identity"
       end
     end
+    resources :organization_memberships, only: %i[update destroy create]
     resources :welcome, only: %i[index create]
+    resources :growth, only: %i[index]
     resources :tools, only: %i[index create] do
       collection do
         post "bust_cache"
@@ -69,7 +78,7 @@ Rails.application.routes.draw do
           constraints: ApiConstraints.new(version: 0, default: true) do
       resources :articles, only: %i[index show create update] do
         collection do
-          get "/onboarding", to: "articles#onboarding"
+          get :me
         end
       end
       resources :comments, only: %i[index show]
@@ -81,7 +90,11 @@ Rails.application.routes.draw do
           post "/onboarding", to: "reactions#onboarding"
         end
       end
-      resources :users, only: %i[index show]
+      resources :users, only: %i[index show] do
+        collection do
+          get :me
+        end
+      end
       resources :tags, only: [:index] do
         collection do
           get "/onboarding", to: "tags#onboarding"
@@ -128,7 +141,6 @@ Rails.application.routes.draw do
   resources :notifications, only: [:index]
   resources :tags, only: [:index]
   resources :stripe_active_cards, only: %i[create update destroy]
-  resources :stripe_cancellations, only: [:create]
   resources :live_articles, only: [:index]
   resources :github_repos, only: %i[create update]
   resources :buffered_articles, only: [:index]
@@ -141,7 +153,7 @@ Rails.application.routes.draw do
   resources :html_variant_trials, only: [:create]
   resources :html_variant_successes, only: [:create]
   resources :push_notification_subscriptions, only: [:create]
-  resources :tag_adjustments, only: [:create]
+  resources :tag_adjustments, only: %i[create destroy]
   resources :rating_votes, only: [:create]
   resources :page_views, only: %i[create update]
   resources :classified_listings, path: :listings, only: %i[index new create edit update delete dashboard]
@@ -154,6 +166,7 @@ Rails.application.routes.draw do
   resources :poll_skips, only: [:create]
   resources :profile_pins, only: %i[create update]
   resources :partnerships, only: %i[index create show], param: :option
+  resources :display_ad_events, only: [:create]
 
   get "/chat_channel_memberships/find_by_chat_channel_id" => "chat_channel_memberships#find_by_chat_channel_id"
   get "/listings/dashboard" => "classified_listings#dashboard"
@@ -166,6 +179,7 @@ Rails.application.routes.draw do
   get "/notification_subscriptions/:notifiable_type/:notifiable_id" => "notification_subscriptions#show"
   post "/notification_subscriptions/:notifiable_type/:notifiable_id" => "notification_subscriptions#upsert"
   patch "/onboarding_update" => "users#onboarding_update"
+  patch "/onboarding_checkbox_update" => "users#onboarding_checkbox_update"
   get "email_subscriptions/unsubscribe"
   post "/chat_channels/:id/moderate" => "chat_channels#moderate"
   post "/chat_channels/:id/open" => "chat_channels#open"
@@ -232,7 +246,7 @@ Rails.application.routes.draw do
 
   # You can have the root of your site routed with "root
   get "/about" => "pages#about"
-  get "/api", to: "pages#api"
+  get "/api", to: redirect("https://docs.dev.to/api")
   get "/privacy" => "pages#privacy"
   get "/terms" => "pages#terms"
   get "/contact" => "pages#contact"
@@ -249,6 +263,7 @@ Rails.application.routes.draw do
   get "/welcome" => "pages#welcome"
   get "/challenge" => "pages#challenge"
   get "/badge" => "pages#badge"
+  get "/onboarding" => "pages#onboarding"
   get "/shecoded" => "pages#shecoded"
   get "/💸", to: redirect("t/hiring")
   get "/security", to: "pages#bounty"
@@ -305,7 +320,8 @@ Rails.application.routes.draw do
   get "/new" => "articles#new"
   get "/new/:template" => "articles#new"
 
-  get "/pod" => "podcast_episodes#index"
+  get "/pod", to: "podcast_episodes#index"
+  get "/podcasts", to: redirect("pod")
   get "/readinglist" => "reading_list_items#index"
   get "/readinglist/:view" => "reading_list_items#index", constraints: { view: /archive/ }
   get "/history", to: "history#index", as: :history
@@ -333,8 +349,6 @@ Rails.application.routes.draw do
   get "/:timeframe" => "stories#index", constraints: { timeframe: /latest/ }
 
   # Legacy comment format (might still be floating around app, and external links)
-  get "/:username/:slug/comments/new/:parent_id_code" => "comments#new"
-  get "/:username/:slug/comments/new" => "comments#new"
   get "/:username/:slug/comments" => "comments#index"
   get "/:username/:slug/comments/:id_code" => "comments#index"
   get "/:username/:slug/comments/:id_code/edit" => "comments#edit"
