@@ -21,8 +21,8 @@ RSpec.describe Article, type: :model do
   it { is_expected.to belong_to(:organization).optional }
   it { is_expected.to belong_to(:collection).optional }
   it { is_expected.to have_many(:comments) }
-  it { is_expected.to have_many(:reactions) }
-  it { is_expected.to have_many(:notifications) }
+  it { is_expected.to have_many(:reactions).dependent(:destroy) }
+  it { is_expected.to have_many(:notifications).dependent(:destroy) }
   it { is_expected.to have_many(:notification_subscriptions).dependent(:destroy) }
   it { is_expected.to validate_presence_of(:user_id) }
   it { is_expected.not_to allow_value("foo").for(:main_image_background_hex_color) }
@@ -389,9 +389,6 @@ RSpec.describe Article, type: :model do
   end
 
   describe "before save" do
-    # before do
-    #   article = create(:article, user_id: user.id)
-    # end
     it "assigns path on save" do
       article = create(:article, user_id: user.id)
       expect(article.path).to eq("/#{article.username}/#{article.slug}")

@@ -75,6 +75,7 @@ class Article < ApplicationRecord
   serialize :cached_organization
 
   scope :published, -> { where(published: true) }
+  scope :unpublished, -> { where(published: false) }
 
   scope :cached_tagged_with, ->(tag) { where("cached_tag_list ~* ?", "^#{tag},| #{tag},|, #{tag}$|^#{tag}$") }
 
@@ -268,10 +269,8 @@ class Article < ApplicationRecord
   end
 
   def delete_related_objects
-    index = Algolia::Index.new("searchables_#{Rails.env}")
-    index.delete_object("articles-#{id}")
-    index = Algolia::Index.new("ordered_articles_#{Rails.env}")
-    index.delete_object("articles-#{id}")
+    Search::RemoveFromIndexJob.perform_now("searchables_#{Rails.env}", index_id)
+    Search::RemoveFromIndexJob.perform_now("ordered_articles_#{Rails.env}", index_id)
   end
 
   def touch_by_reaction
@@ -570,26 +569,22 @@ class Article < ApplicationRecord
 
   def update_cached_user
     if organization
-      cached_org_object = {
-        name: organization.name,
-        username: organization.username,
-        slug: organization.slug,
-        profile_image_90: organization.profile_image_90,
-        profile_image_url: organization.profile_image_url
-      }
-      self.cached_organization = OpenStruct.new(cached_org_object)
+      self.cached_organization = OpenStruct.new(set_cached_object(organization))
     end
 
     if user
-      cached_user_object = {
-        name: user.name,
-        username: user.username,
-        slug: user.username,
-        profile_image_90: user.profile_image_90,
-        profile_image_url: user.profile_image_url
-      }
-      self.cached_user = OpenStruct.new(cached_user_object)
+      self.cached_user = OpenStruct.new(set_cached_object(user))
     end
+  end
+
+  def set_cached_object(object)
+    {
+      name: object.name,
+      username: object.username,
+      slug: object == organization ? object.slug : object.username,
+      profile_image_90: object.profile_image_90,
+      profile_image_url: object.profile_image_url
+    }
   end
 
   def set_all_dates

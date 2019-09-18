@@ -37,6 +37,7 @@ Rails.application.routes.draw do
     resources :feedback_messages, only: %i[index show]
     resources :listings, only: %i[index edit update destroy], controller: "classified_listings"
     resources :pages, only: %i[index new create edit update destroy]
+    resources :mods, only: %i[index update]
     resources :podcasts, only: %i[index edit update destroy] do
       member do
         post :add_admin
@@ -71,6 +72,7 @@ Rails.application.routes.draw do
         post "bust_cache"
       end
     end
+    resources :webhook_endpoints, only: :index
   end
 
   namespace :api, defaults: { format: "json" } do
@@ -78,7 +80,7 @@ Rails.application.routes.draw do
           constraints: ApiConstraints.new(version: 0, default: true) do
       resources :articles, only: %i[index show create update] do
         collection do
-          get :me
+          get "me(/:status)", to: "articles#me", as: :me, constraints: { status: /published|unpublished|all/ }
         end
       end
       resources :comments, only: %i[index show]
@@ -106,6 +108,7 @@ Rails.application.routes.draw do
           post "/update_or_create", to: "github_repos#update_or_create"
         end
       end
+      resources :webhooks, only: %i[index create show destroy]
 
       get "/analytics/totals", to: "analytics#totals"
       get "/analytics/historical", to: "analytics#historical"
@@ -140,6 +143,7 @@ Rails.application.routes.draw do
   resources :blocks
   resources :notifications, only: [:index]
   resources :tags, only: [:index]
+  resources :downloads, only: [:index]
   resources :stripe_active_cards, only: %i[create update destroy]
   resources :live_articles, only: [:index]
   resources :github_repos, only: %i[create update]
@@ -156,7 +160,7 @@ Rails.application.routes.draw do
   resources :tag_adjustments, only: %i[create destroy]
   resources :rating_votes, only: [:create]
   resources :page_views, only: %i[create update]
-  resources :classified_listings, path: :listings, only: %i[index new create edit update delete dashboard]
+  resources :classified_listings, path: :listings, only: %i[index new create edit update destroy dashboard]
   resources :credits, only: %i[index new create] do
     get "purchase", on: :collection, to: "credits#new"
   end
@@ -174,6 +178,8 @@ Rails.application.routes.draw do
   get "/listings/:category/:slug" => "classified_listings#index", as: :classified_listing_slug
   get "/listings/:category/:slug/:view" => "classified_listings#index",
       constraints: { view: /moderate/ }
+  get "/listings/:category/:slug/delete_confirm" => "classified_listings#delete_confirm"
+  delete "/listings/:category/:slug" => "classified_listings#destroy"
   get "/notifications/:filter" => "notifications#index"
   get "/notifications/:filter/:org_id" => "notifications#index"
   get "/notification_subscriptions/:notifiable_type/:notifiable_id" => "notification_subscriptions#show"
@@ -272,7 +278,6 @@ Rails.application.routes.draw do
   get "/events" => "events#index"
   get "/workshops", to: redirect("events")
   get "/sponsorship-info" => "pages#sponsorship_faq"
-  get "/organization-info" => "pages#org_info"
   get "/sponsors" => "pages#sponsors"
   get "/search" => "stories#search"
   post "articles/preview" => "articles#preview"
@@ -280,7 +285,7 @@ Rails.application.routes.draw do
   get "/stories/warm_comments/:username/:slug" => "stories#warm_comments"
   get "/freestickers" => "giveaways#new"
   get "/shop", to: redirect("https://shop.dev.to/")
-  get "/mod" => "moderations#index"
+  get "/mod" => "moderations#index", as: :mod
 
   post "/fallback_activity_recorder" => "ga_events#create"
 
@@ -316,6 +321,8 @@ Rails.application.routes.draw do
     get "/rails/mailers" => "rails/mailers#index"
     get "/rails/mailers/*path" => "rails/mailers#preview"
   end
+
+  get "/embed/:embeddable" => "liquid_embeds#show"
 
   get "/new" => "articles#new"
   get "/new/:template" => "articles#new"
