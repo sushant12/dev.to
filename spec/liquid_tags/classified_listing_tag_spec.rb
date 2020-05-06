@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe ClassifiedListingTag, type: :liquid_template do
+RSpec.describe ClassifiedListingTag, type: :liquid_tag do
   let(:user) { create(:user, username: "dariamorgendorffer", name: "Daria Morgendorffer") }
   let(:user_listing) do
     create(
@@ -9,7 +9,6 @@ RSpec.describe ClassifiedListingTag, type: :liquid_template do
       title: "save me pls",
       body_markdown: "sigh sigh sigh",
       processed_html: "<p>sigh sigh sigh</p>",
-      category: "cfp",
       tag_list: %w[a b c],
       organization_id: nil,
     )
@@ -22,7 +21,6 @@ RSpec.describe ClassifiedListingTag, type: :liquid_template do
       title: "this old af",
       body_markdown: "exxpired",
       processed_html: "<p>exxpired</p>",
-      category: "cfp",
       tag_list: %w[x y z],
       organization_id: nil,
       bumped_at: datetime,
@@ -31,7 +29,11 @@ RSpec.describe ClassifiedListingTag, type: :liquid_template do
     )
   end
   let(:org) { create(:organization) }
-  let(:org_user) { create(:user, organization_id: org.id) }
+  let(:org_user) do
+    user = create(:user)
+    create(:organization_membership, user: user, organization: org)
+    user
+  end
   let(:org_listing) do
     create(
       :classified_listing,
@@ -39,7 +41,6 @@ RSpec.describe ClassifiedListingTag, type: :liquid_template do
       title: "this is a job posting",
       body_markdown: "wow code lots get not only money but satisfaction from work",
       processed_html: "<p>wow code lots get not only money but satisfaction from work</p>",
-      category: "misc",
       tag_list: %w[a b c],
       organization_id: org.id,
     )
@@ -113,6 +114,6 @@ RSpec.describe ClassifiedListingTag, type: :liquid_template do
 
   it "renders a proper listing tag from org listing" do
     liquid = generate_new_liquid("#{org_listing.category}/#{org_listing.slug}")
-    expect(liquid.render).to eq(correct_link_html(org_listing))
+    expect(CGI.unescapeHTML(liquid.render)).to eq(correct_link_html(org_listing))
   end
 end

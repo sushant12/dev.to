@@ -1,27 +1,22 @@
 import { h } from 'preact';
 import PropTypes from 'prop-types';
+// eslint-disable-next-line import/no-unresolved
 import ConfigImage from 'images/three-dots.svg';
-import GroupImage from 'images/organization.svg';
 
 const Channels = ({
   activeChannelId,
   chatChannels,
+  unopenedChannelIds,
   handleSwitchChannel,
   expanded,
   filterQuery,
   channelsLoaded,
-  incomingVideoCallChannelIds,
 }) => {
   const channels = chatChannels.map(channel => {
     const isActive = parseInt(activeChannelId, 10) === channel.chat_channel_id;
-    const lastOpened = channel.last_opened_at;
     const isUnopened =
-      new Date(channel.channel_last_message_at) > new Date(lastOpened) &&
-      channel.channel_messages_count > 0;
+      !isActive && unopenedChannelIds.includes(channel.chat_channel_id);
     let newMessagesIndicator = isUnopened ? 'new' : 'old';
-    if (incomingVideoCallChannelIds.indexOf(channel.chat_channel_id) > -1) {
-      newMessagesIndicator = 'video';
-    }
     const otherClassname = isActive
       ? 'chatchanneltab--active'
       : 'chatchanneltab--inactive';
@@ -29,7 +24,7 @@ const Channels = ({
       <button
         type="button"
         key={channel.id}
-        className="chatchanneltabbutton"
+        className="chatchanneltabbutton crayons-link"
         onClick={handleSwitchChannel}
         data-channel-id={channel.chat_channel_id}
         data-channel-slug={channel.channel_modified_slug}
@@ -51,10 +46,14 @@ const Channels = ({
             <img
               src={channel.channel_image}
               alt="pic"
-              className="chatchanneltabindicatordirectimage"
+              className={
+                channel.channel_type === 'direct'
+                  ? 'chatchanneltabindicatordirectimage'
+                  : 'chatchanneltabindicatorgroupimage invert-channel-image'
+              }
             />
           </span>
-          {channel.channel_name}
+          {isUnopened ? <span class="crayons-indicator crayons-indicator--accent crayons-indicator--bullet"></span> : ''}{channel.channel_name}
         </span>
       </button>
     );
@@ -70,9 +69,11 @@ const Channels = ({
       <div className="chatchannels__channelslistheader">
         <span role="img" aria-label="emoji">
           👋
-        </span>{' '}
+        </span>
+        {' '}
         Welcome to
-        <b> DEV Connect</b>! You may message anyone you mutually follow.
+        <b> DEV Connect</b>
+        ! You may message anyone you mutually follow.
       </div>
     );
   }
@@ -111,12 +112,12 @@ const Channels = ({
 
 Channels.propTypes = {
   activeChannelId: PropTypes.number.isRequired,
-  chatChannels: PropTypes.array.isRequired,
+  chatChannels: PropTypes.arrayOf(PropTypes.objectOf()).isRequired,
+  unopenedChannelIds: PropTypes.arrayOf().isRequired,
   handleSwitchChannel: PropTypes.func.isRequired,
   expanded: PropTypes.bool.isRequired,
   filterQuery: PropTypes.string.isRequired,
   channelsLoaded: PropTypes.bool.isRequired,
-  incomingVideoCallChannelIds: PropTypes.array.isRequired,
 };
 
 export default Channels;

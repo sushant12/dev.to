@@ -4,7 +4,7 @@ class LinkTag < LiquidTagBase
 
   def initialize(_tag_name, slug_or_path_or_url, _tokens)
     @article = get_article(slug_or_path_or_url)
-    @title = @article.title
+    @title = @article.title if @article
   end
 
   def render(_context)
@@ -16,17 +16,17 @@ class LinkTag < LiquidTagBase
 
   def get_article(slug)
     slug = ActionController::Base.helpers.strip_tags(slug).strip
-    article = find_article_by_user(article_hash(slug)) || find_article_by_org(article_hash(slug))
-    raise StandardError, "Invalid link URL or link URL does not exist" unless article
-
-    article
+    find_article_by_user(article_hash(slug)) || find_article_by_org(article_hash(slug))
   end
 
   def article_hash(slug)
     path = Addressable::URI.parse(slug).path
     path.slice!(0) if path.starts_with?("/") # remove leading slash if present
     path.slice!(-1) if path.ends_with?("/") # remove trailing slash if present
-    Addressable::Template.new("{username}/{slug}").extract(path)&.symbolize_keys
+    extracted_hash = Addressable::Template.new("{username}/{slug}").extract(path)&.symbolize_keys
+    raise StandardError, "This URL is not an article link: {% link #{slug} %}" unless extracted_hash
+
+    extracted_hash
   end
 
   def find_article_by_user(hash)
@@ -45,3 +45,4 @@ class LinkTag < LiquidTagBase
 end
 
 Liquid::Template.register_tag("link", LinkTag)
+Liquid::Template.register_tag("post", LinkTag)

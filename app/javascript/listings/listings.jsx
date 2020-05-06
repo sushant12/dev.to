@@ -1,12 +1,73 @@
 import { h, Component } from 'preact';
-import { SingleListing } from './singleListing';
+import debounceAction from '../src/utils/debounceAction';
+import { fetchSearch } from '../src/utils/search';
+import SingleListing from './singleListing';
+
+/**
+ * How many listings to show per page
+ * @constant {number}
+ */
+const LISTING_PAGE_SIZE = 75;
+const MATCH_LISTING = [
+  'single-classified-listing-container__inner',
+  'classified-filters',
+  'classified-listings-modal-background',
+];
+
+function resizeMasonryItem(item) {
+  /* Get the grid object, its row-gap, and the size of its implicit rows */
+  const grid = document.getElementsByClassName('classifieds-columns')[0];
+  const rowGap = parseInt(
+    window.getComputedStyle(grid).getPropertyValue('grid-row-gap'),
+    10,
+  );
+  const rowHeight = parseInt(
+    window.getComputedStyle(grid).getPropertyValue('grid-auto-rows'),
+    10,
+  );
+
+  const rowSpan = Math.ceil(
+    (item.querySelector('.listing-content').getBoundingClientRect().height +
+      rowGap) /
+      (rowHeight + rowGap),
+  );
+
+  /* Set the spanning as calculated above (S) */
+  // eslint-disable-next-line no-param-reassign
+  item.style.gridRowEnd = `span ${rowSpan}`;
+}
+
+function resizeAllMasonryItems() {
+  // Get all item class objects in one list
+  const allItems = document.getElementsByClassName('single-classified-listing');
+
+  /*
+   * Loop through the above list and execute the spanning function to
+   * each list-item (i.e. each masonry item)
+   */
+  // eslint-disable-next-line vars-on-top
+  for (let i = 0; i < allItems.length; i += 1) {
+    resizeMasonryItem(allItems[i]);
+  }
+}
+
+function updateListings(classifiedListings) {
+  const fullListings = [];
+
+  classifiedListings.forEach((listing) => {
+    if (listing.bumped_at) {
+      fullListings.push(listing);
+    }
+  });
+
+  return fullListings;
+}
 
 export class Listings extends Component {
   state = {
     listings: [],
     query: '',
     tags: [],
-    index: null,
     category: '',
     allCategories: [],
     initialFetch: true,
@@ -21,36 +82,38 @@ export class Listings extends Component {
   componentWillMount() {
     const params = this.getQueryParams();
     const t = this;
-    const algoliaId = document.querySelector("meta[name='algolia-public-id']")
-      .content;
-    const algoliaKey = document.querySelector("meta[name='algolia-public-key']")
-      .content;
-    const env = document.querySelector("meta[name='environment']").content;
-    const client = algoliasearch(algoliaId, algoliaKey);
-    const index = client.initIndex(`ClassifiedListing_${env}`);
     const container = document.getElementById('classifieds-index-container');
     const category = container.dataset.category || '';
     const allCategories = JSON.parse(container.dataset.allcategories || []);
     let tags = [];
+    let openedListing = null;
+    let slug = null;
+    let listings = [];
+
     if (params.t) {
       tags = params.t.split(',');
     }
+
     const query = params.q || '';
-    let listings = [];
+
     if (tags.length === 0 && query === '') {
       listings = JSON.parse(container.dataset.listings);
     }
-    let openedListing = null;
-    let slug = null;
+
     if (container.dataset.displayedlisting) {
       openedListing = JSON.parse(container.dataset.displayedlisting);
-      slug = openedListing.slug;
+      ({ slug } = openedListing);
       document.body.classList.add('modal-open');
     }
+
+    t.debouncedClassifiedListingSearch = debounceAction(
+      this.handleQuery.bind(this),
+      { time: 150, config: { leading: true } },
+    );
+
     t.setState({
       query,
       tags,
-      index,
       category,
       allCategories,
       listings,
@@ -80,12 +143,15 @@ export class Listings extends Component {
 
   addTag = (e, tag) => {
     e.preventDefault();
+    if (document.body.classList.contains('modal-open')) {
+      this.handleCloseModal('close-modal');
+    }
     const { query, tags, category } = this.state;
     const newTags = tags;
     if (newTags.indexOf(tag) === -1) {
       newTags.push(tag);
     }
-    this.setState({ tags: newTags, page: 0, listings: [] });
+    this.setState({ tags: newTags, page: 0 });
     this.listingSearch(query, newTags, category, null);
     window.scroll(0, 0);
   };
@@ -98,29 +164,29 @@ export class Listings extends Component {
     if (newTags.indexOf(tag) > -1) {
       newTags.splice(index, 1);
     }
-    this.setState({ tags: newTags, page: 0, listings: [] });
+    this.setState({ tags: newTags, page: 0 });
     this.listingSearch(query, newTags, category, null);
   };
 
   selectCategory = (e, cat) => {
     e.preventDefault();
     const { query, tags } = this.state;
-    this.setState({ category: cat, page: 0, listings: [] });
+    this.setState({ category: cat, page: 0 });
     this.listingSearch(query, tags, cat, null);
   };
 
-  handleKeyDown = e => {
+  handleKeyDown = (e) => {
     // Enable Escape key to close an open listing.
     this.handleCloseModal(e);
   };
 
-  handleCloseModal = e => {
+  handleCloseModal = (e) => {
     const { openedListing } = this.state;
+
     if (
+      e === 'close-modal' ||
       (openedListing !== null && e.key === 'Escape') ||
-      e.target.id === 'single-classified-listing-container__inner' ||
-      e.target.id === 'classified-filters' ||
-      e.target.id === 'classified-listings-modal-background'
+      MATCH_LISTING.includes(e.target.id)
     ) {
       const { query, tags, category } = this.state;
       this.setState({ openedListing: null, page: 0 });
@@ -141,15 +207,15 @@ export class Listings extends Component {
     document.body.classList.add('modal-open');
   };
 
-  handleDraftingMessage = e => {
+  handleDraftingMessage = (e) => {
     e.preventDefault();
     this.setState({ message: e.target.value });
   };
 
-  handleSubmitMessage = e => {
+  handleSubmitMessage = (e) => {
     e.preventDefault();
     const { message, openedListing } = this.state;
-    if (this.state.message.replace(/\s/g, '').length === 0) {
+    if (message.replace(/\s/g, '').length === 0) {
       return;
     }
     const formData = new FormData();
@@ -173,16 +239,16 @@ export class Listings extends Component {
       });
   };
 
-  handleQuery = e => {
+  handleQuery = (e) => {
     const { tags, category } = this.state;
-    this.setState({ query: e.target.value, page: 0, listings: [] });
+    this.setState({ query: e.target.value, page: 0 });
     this.listingSearch(e.target.value, tags, category, null);
   };
 
   clearQuery = () => {
     const { tags, category } = this.state;
     document.getElementById('listings-search').value = '';
-    this.setState({ query: '', page: 0, listings: [] });
+    this.setState({ query: '', page: 0 });
     this.listingSearch('', tags, category, null);
   };
 
@@ -210,12 +276,12 @@ export class Listings extends Component {
 
   setUser = () => {
     const t = this;
-    setTimeout(function() {
+    setTimeout(() => {
       if (window.currentUser && t.state.currentUserId === null) {
         t.setState({ currentUserId: window.currentUser.id });
       }
     }, 300);
-    setTimeout(function() {
+    setTimeout(() => {
       if (window.currentUser && t.state.currentUserId === null) {
         t.setState({ currentUserId: window.currentUser.id });
       }
@@ -224,12 +290,8 @@ export class Listings extends Component {
 
   triggerMasonry = () => {
     resizeAllMasonryItems();
-    setTimeout(function() {
-      resizeAllMasonryItems();
-    }, 1);
-    setTimeout(function() {
-      resizeAllMasonryItems();
-    }, 3);
+    setTimeout(resizeAllMasonryItems, 1);
+    setTimeout(resizeAllMasonryItems, 3);
   };
 
   setLocation = (query, tags, category, slug) => {
@@ -250,29 +312,39 @@ export class Listings extends Component {
     window.history.replaceState(null, null, newLocation);
   };
 
+  /**
+   * Call search API for ClassifiedListings
+   *
+   * @param {string} query - The search term
+   * @param {string} tags - The tags selected by the user
+   * @param {string} category - The category selected by the user
+   * @param {string} slug - The listing's slug
+   *
+   * @returns {Promise} A promise object with response formatted as JSON.
+   */
   listingSearch(query, tags, category, slug) {
     const t = this;
-    const { index, page, listings } = t.state;
-    const filterObject = { tagFilters: tags, hitsPerPage: 75, page };
-    if (category.length > 0) {
-      filterObject.filters = `category:${category}`;
-    }
-    index.search(query, filterObject).then(function searchDone(content) {
-      const fullListings = listings;
-      content.hits.forEach(listing => {
-        if (listing.bumped_at) {
-          if (!listings.map(l => l.id).includes(listing.id)) {
-            fullListings.push(listing);
-          }
-        }
-      });
+    const { page } = t.state;
+    const dataHash = {
+      category,
+      classified_listing_search: query,
+      page,
+      per_page: LISTING_PAGE_SIZE,
+      tags,
+      tag_boolean_mode: 'all',
+    };
+
+    const responsePromise = fetchSearch('classified_listings', dataHash);
+    return responsePromise.then((response) => {
+      const classifiedListings = response.result;
+      const fullListings = updateListings(classifiedListings);
       t.setState({
         listings: fullListings,
         initialFetch: false,
-        showNextPageButt: content.hits.length === 75,
+        showNextPageButt: classifiedListings.length === LISTING_PAGE_SIZE,
       });
+      this.setLocation(query, tags, category, slug);
     });
-    this.setLocation(query, tags, category, slug);
   }
 
   render() {
@@ -286,8 +358,9 @@ export class Listings extends Component {
       openedListing,
       showNextPageButt,
       initialFetch,
+      message,
     } = this.state;
-    const allListings = listings.map(listing => (
+    const allListings = listings.map((listing) => (
       <SingleListing
         onAddTag={this.addTag}
         onChangeCategory={this.selectCategory}
@@ -297,30 +370,32 @@ export class Listings extends Component {
         isOpen={false}
       />
     ));
-    const selectedTags = tags.map(tag => (
+    const selectedTags = tags.map((tag) => (
       <span className="classified-tag">
         <a
           href="/listings?tags="
           className="tag-name"
-          onClick={e => this.removeTag(e, tag)}
+          onClick={(e) => this.removeTag(e, tag)}
           data-no-instant
         >
           <span>{tag}</span>
           <span
             className="tag-close"
-            onClick={e => this.removeTag(e, tag)}
             data-no-instant
+            role="button"
+            onKeyPress={(e) => e.key === 'Enter' && this.removeTag(e, tag)}
+            tabIndex="0"
           >
             ×
           </span>
         </a>
       </span>
     ));
-    const categoryLinks = allCategories.map(cat => (
+    const categoryLinks = allCategories.map((cat) => (
       <a
         href={`/listings/${cat.slug}`}
         className={cat.slug === category ? 'selected' : ''}
-        onClick={e => this.selectCategory(e, cat.slug)}
+        onClick={(e) => this.selectCategory(e, cat.slug)}
         data-no-instant
       >
         {cat.name}
@@ -330,7 +405,7 @@ export class Listings extends Component {
     if (showNextPageButt) {
       nextPageButt = (
         <div className="classifieds-load-more-button">
-          <button onClick={e => this.loadNextPage(e)} type="button">
+          <button onClick={(e) => this.loadNextPage(e)} type="button">
             Load More Listings
           </button>
         </div>
@@ -360,21 +435,30 @@ export class Listings extends Component {
           id="classified-listings-modal-background"
         />
       );
-      if (
-        openedListing.contact_via_connect &&
-        openedListing.user_id !== currentUserId
-      ) {
+      if (openedListing.contact_via_connect) {
         messageModal = (
           <form
             id="listings-message-form"
             className="listings-contact-via-connect"
             onSubmit={this.handleSubmitMessage}
           >
-            <p>
-              <b>Contact {openedListing.author.name} via DEV Connect</b>
-            </p>
+            {openedListing.contact_via_connect &&
+            openedListing.user_id !== currentUserId ? (
+              <p>
+                <b>
+                  Contact
+                  {` ${openedListing.author.name} `}
+                  via DEV Connect
+                </b>
+              </p>
+            ) : (
+              <p>
+                This is your active listing. Any member can contact you via this
+                form.
+              </p>
+            )}
             <textarea
-              value={this.state.message}
+              value={message}
               onChange={this.handleDraftingMessage}
               id="new-message"
               rows="4"
@@ -385,40 +469,30 @@ export class Listings extends Component {
               SEND
             </button>
             <p>
-              <em>
-                Message must be relevant and on-topic with the listing. All
-                private interactions <b>must</b> abide by the{' '}
-                <a href="/code-of-conduct">code of conduct</a>
-              </em>
-            </p>
-          </form>
-        );
-      } else if (openedListing.contact_via_connect) {
-        messageModal = (
-          <form
-            id="listings-message-form"
-            className="listings-contact-via-connect"
-          >
-            <p>
-              This is your active listing. Any member can contact you via this
-              form.
-            </p>
-            <textarea
-              value={this.state.message}
-              onChange={this.handleDraftingMessage}
-              id="new-message"
-              rows="4"
-              cols="70"
-              placeholder="Enter your message here..."
-            />
-            <button type="submit" value="Submit" className="submit-button cta">
-              SEND
-            </button>
-            <p>
-              <em>
-                All private interactions <b>must</b> abide by the{' '}
-                <a href="/code-of-conduct">code of conduct</a>
-              </em>
+              {openedListing.contact_via_connect &&
+              openedListing.user_id !== currentUserId ? (
+                <em>
+                  Message must be relevant and on-topic with the listing. All
+                  {' '}
+                  private interactions 
+                  {' '}
+                  <b>must</b>
+                  {' '}
+                  abide by the
+                  {' '}
+                  <a href="/code-of-conduct">code of conduct</a>
+                </em>
+              ) : (
+                <em>
+                  All private interactions 
+                  {' '}
+                  <b>must</b>
+                  {' '}
+                  abide by the
+                  {' '}
+                  <a href="/code-of-conduct">code of conduct</a>
+                </em>
+              )}
             </p>
           </form>
         );
@@ -429,6 +503,9 @@ export class Listings extends Component {
             id="single-classified-listing-container__inner"
             className="single-classified-listing-container__inner"
             onClick={this.handleCloseModal}
+            role="button"
+            onKeyPress={this.handleCloseModal}
+            tabIndex="0"
           >
             <SingleListing
               onAddTag={this.addTag}
@@ -461,7 +538,7 @@ export class Listings extends Component {
             <a
               href="/listings"
               className={category === '' ? 'selected' : ''}
-              onClick={e => this.selectCategory(e, '')}
+              onClick={(e) => this.selectCategory(e, '')}
               data-no-instant
             >
               all
@@ -481,7 +558,7 @@ export class Listings extends Component {
               id="listings-search"
               autoComplete="off"
               defaultValue={query}
-              onKeyUp={e => this.handleQuery(e)}
+              onKeyUp={this.debouncedClassifiedListingSearch}
             />
             {clearQueryButton}
             {selectedTags}
@@ -494,40 +571,6 @@ export class Listings extends Component {
         {modal}
       </div>
     );
-  }
-}
-
-function resizeMasonryItem(item) {
-  /* Get the grid object, its row-gap, and the size of its implicit rows */
-  const grid = document.getElementsByClassName('classifieds-columns')[0];
-  const rowGap = parseInt(
-    window.getComputedStyle(grid).getPropertyValue('grid-row-gap'),
-  );
-  const rowHeight = parseInt(
-    window.getComputedStyle(grid).getPropertyValue('grid-auto-rows'),
-  );
-
-  const rowSpan = Math.ceil(
-    (item.querySelector('.listing-content').getBoundingClientRect().height +
-      rowGap) /
-      (rowHeight + rowGap),
-  );
-
-  /* Set the spanning as calculated above (S) */
-  // eslint-disable-next-line no-param-reassign
-  item.style.gridRowEnd = `span ${rowSpan}`;
-}
-function resizeAllMasonryItems() {
-  // Get all item class objects in one list
-  const allItems = document.getElementsByClassName('single-classified-listing');
-
-  /*
-   * Loop through the above list and execute the spanning function to
-   * each list-item (i.e. each masonry item)
-   */
-  // eslint-disable-next-line vars-on-top
-  for (let i = 0; i < allItems.length; i++) {
-    resizeMasonryItem(allItems[i]);
   }
 }
 

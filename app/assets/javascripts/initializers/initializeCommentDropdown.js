@@ -1,13 +1,20 @@
-// eslint-disable-next-line no-unused-vars
+'use strict';
+
 function initializeCommentDropdown() {
   const announcer = document.getElementById('article-copy-link-announcer');
 
-  function isIOSDevice() {
+  function isClipboardSupported() {
     return (
-      navigator.userAgent.match(/iPhone/i) ||
-      navigator.userAgent.match('CriOS') ||
-      navigator.userAgent.match(/iPad/i) ||
-      navigator.userAgent === 'DEV-Native-ios'
+      typeof navigator.clipboard !== "undefined" &&
+      navigator.clipboard !== null
+    );
+  }
+
+  function isNativeAndroidDevice() {
+    return (
+      navigator.userAgent === 'DEV-Native-android' &&
+      typeof AndroidBridge !== "undefined" &&
+      AndroidBridge !== null
     );
   }
 
@@ -24,21 +31,39 @@ function initializeCommentDropdown() {
     const input =
       activeElement.localName === 'clipboard-copy'
         ? activeElement.querySelector('input')
-        : activeElement;
+        : document.getElementById('article-copy-link-input');
     input.focus();
     input.setSelectionRange(0, input.value.length);
     announcer.hidden = false;
   }
 
   function hideAnnouncer() {
-    announcer.hidden = true;
+    if (announcer) {
+      announcer.hidden = true;
+    }
   }
 
-  function iOSCopyText() {
-    const input = document.getElementById('article-copy-link-input');
-    input.setSelectionRange(0, input.value.length);
-    document.execCommand('copy');
+  function execCopyText() {
     showAnnouncer();
+    document.execCommand('copy');
+  }
+
+  function copyText() {
+    const inputValue = document.getElementById('article-copy-link-input').value;
+    if (isNativeAndroidDevice()) {
+      AndroidBridge.copyToClipboard(inputValue);
+      showAnnouncer();
+    } else if (isClipboardSupported()) {
+      navigator.clipboard.writeText(inputValue)
+        .then(() => {
+          showAnnouncer();
+        })
+        .catch((err) => {
+          execCopyText();
+        });
+    } else {
+      execCopyText();
+    }
   }
 
   function shouldCloseDropdown(event) {
@@ -60,13 +85,11 @@ function initializeCommentDropdown() {
   }
 
   function removeCopyListener() {
-    if (isIOSDevice) {
-      const clipboardCopyElement = document.getElementsByTagName(
-        'clipboard-copy',
-      )[0];
-      clipboardCopyElement.removeEventListener('click', iOSCopyText);
-    } else {
-      document.removeEventListener('clipboard-copy', showAnnouncer);
+    const clipboardCopyElement = document.getElementsByTagName(
+      'clipboard-copy',
+    )[0];
+    if (clipboardCopyElement) {
+      clipboardCopyElement.removeEventListener('click', copyText);
     }
   }
 
@@ -95,16 +118,13 @@ function initializeCommentDropdown() {
     } else {
       removeAllShowing();
       dropdownContent.classList.add('showing');
-      if (isIOSDevice) {
-        const clipboardCopyElement = document.getElementsByTagName(
-          'clipboard-copy',
-        )[0];
+      const clipboardCopyElement = document.getElementsByTagName(
+        'clipboard-copy',
+      )[0];
 
-        document.addEventListener('click', outsideClickListener);
-        clipboardCopyElement.addEventListener('click', iOSCopyText);
-      } else {
-        document.addEventListener('click', outsideClickListener);
-        document.addEventListener('clipboard-copy', showAnnouncer);
+      document.addEventListener('click', outsideClickListener);
+      if (clipboardCopyElement) {
+        clipboardCopyElement.addEventListener('click', copyText);
       }
     }
   }

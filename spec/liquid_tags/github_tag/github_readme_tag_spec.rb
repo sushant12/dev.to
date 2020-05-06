@@ -7,7 +7,7 @@ vcr_option = {
   allow_playback_repeats: "true"
 }
 
-RSpec.describe GithubTag::GithubReadmeTag, vcr: vcr_option do
+RSpec.describe GithubTag::GithubReadmeTag, type: :liquid_tag, vcr: vcr_option do
   describe "#id" do
     let(:path) { "facebook/react" }
     let(:my_ocktokit_client) { instance_double(Octokit::Client) }
@@ -18,8 +18,8 @@ RSpec.describe GithubTag::GithubReadmeTag, vcr: vcr_option do
 
     setup { Liquid::Template.register_tag("github", GithubTag) }
 
-    def generate_github_readme(path)
-      Liquid::Template.parse("{% github #{path} %}")
+    def generate_github_readme(path, options = "")
+      Liquid::Template.parse("{% github #{path} #{options} %}")
     end
 
     it "accepts proper github link" do
@@ -36,6 +36,21 @@ RSpec.describe GithubTag::GithubReadmeTag, vcr: vcr_option do
       expect do
         generate_github_readme("/hello/hey/hey/hey")
       end.to raise_error(StandardError)
+    end
+
+    it "handles 'no-readme' option" do
+      template = generate_github_readme(path, "no-readme").render
+      readme_class = "ltag-github-body"
+      expect(template).not_to include(readme_class)
+    end
+
+    it "handles respositories with a missing README" do
+      allow(my_ocktokit_client).to receive(:readme).and_raise(Octokit::NotFound)
+
+      template = generate_github_readme(path, "no-readme").render
+      readme_class = "ltag-github-body"
+
+      expect(template).not_to include(readme_class)
     end
   end
 end

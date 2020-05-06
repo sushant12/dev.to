@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe MarkdownParser do
+RSpec.describe MarkdownParser, type: :labor do
   let(:random_word) { Faker::Lorem.word }
   let(:basic_parsed_markdown) { described_class.new(random_word) }
 
@@ -64,6 +64,59 @@ RSpec.describe MarkdownParser do
     expect(generate_and_parse_markdown(code_span)).to include random_word
   end
 
+  it "wraps figcaptions with figures" do
+    code_span = "<p>Statement</p>\n<figcaption>A fig</figcaption>"
+    test = generate_and_parse_markdown("<p>case: </p>" + code_span)
+    expect(test).to eq("<p>case: </p>\n<figure>" + code_span + "</figure>\n\n\n\n")
+  end
+
+  it "does not wrap figcaptions already in figures" do
+    code_span = "<figure><p>Statement</p>\n<figcaption>A fig</figcaption></figure>"
+    test = generate_and_parse_markdown(code_span)
+    expect(test).to eq(code_span + "\n\n\n\n")
+  end
+
+  it "does not wrap figcaptions without predecessors" do
+    code_span = "<figcaption>A fig</figcaption>"
+    test = generate_and_parse_markdown(code_span)
+    expect(test).to eq(code_span + "\n\n")
+  end
+
+  context "when rendering links markdown" do
+    # the following specs are testing HTMLRouge
+    it "renders properly if protocol http is included" do
+      code_span = "[github](http://github.com)"
+      test = generate_and_parse_markdown(code_span)
+      expect(test).to eq("<p><a href=\"http://github.com\">github</a></p>\n\n")
+    end
+
+    it "renders properly if protocol https is included" do
+      code_span = "[github](https://github.com)"
+      test = generate_and_parse_markdown(code_span)
+      expect(test).to eq("<p><a href=\"https://github.com\">github</a></p>\n\n")
+    end
+
+    it "renders properly if protocol is not included" do
+      code_span = "[github](github.com)"
+      test = generate_and_parse_markdown(code_span)
+      expect(test).to eq("<p><a href=\"//github.com\">github</a></p>\n\n")
+    end
+
+    it "renders properly relative paths" do
+      code_span = "[career tag](/t/career)"
+      test = generate_and_parse_markdown(code_span)
+      app_protocol = ApplicationConfig["APP_PROTOCOL"]
+      app_domain = ApplicationConfig["APP_DOMAIN"]
+      expect(test).to eq("<p><a href=\"#{app_protocol}#{app_domain}/t/career\">career tag</a></p>\n\n")
+    end
+
+    it "renders properly anchored links" do
+      code_span = "[Chapter 1](#chapter-1)"
+      test = generate_and_parse_markdown(code_span)
+      expect(test).to eq("<p><a href=\"#chapter-1\">Chapter 1</a></p>\n\n")
+    end
+  end
+
   describe "mentions" do
     let(:user) { build_stubbed(:user) }
 
@@ -81,11 +134,26 @@ RSpec.describe MarkdownParser do
       expect(result).to include "<a", "<em"
     end
 
+    it "works in ul/li tag" do
+      mention = <<~DOC
+        `@#{user.username}` one two, @#{user.username} three four:
+          - `@#{user.username}`
+      DOC
+      result = generate_and_parse_markdown(mention)
+      expect(result).to eq("<p><code>@#{user.username}</code> one two, <a class=\"comment-mentioned-user\" href=\"#{ApplicationConfig['APP_PROTOCOL']}#{ApplicationConfig['APP_DOMAIN']}/#{user.username}\">@#{user.username}</a>\n three four:</p>\n\n<ul>\n<li><code>@#{user.username}</code></li>\n</ul>\n\n")
+    end
+
     it "will not work in code tag" do
       mention = "this is a chunk of text `@#{user.username}`"
       result = generate_and_parse_markdown(mention)
       expect(result).to include "<code"
       expect(result).not_to include "<a"
+    end
+
+    it "works with markdown heavy contents" do
+      mention = "test **[link?](https://dev.to/ben/)** thread, @#{user.username} talks :"
+      result = generate_and_parse_markdown(mention)
+      expect(result).to include "<a class=\"comment-mentioned-user\""
     end
   end
 
@@ -127,9 +195,9 @@ RSpec.describe MarkdownParser do
   end
 
   context "when provided with liquid tags" do
-    it "raises error if liquid tag was used incorrectly" do
+    it "does not raises error if liquid tag was used incorrectly" do
       bad_ltag = "{% #{random_word} %}"
-      expect { generate_and_parse_markdown(bad_ltag) }.to raise_error(StandardError)
+      expect { generate_and_parse_markdown(bad_ltag) }.not_to raise_error
     end
   end
 
@@ -195,7 +263,7 @@ RSpec.describe MarkdownParser do
   context "when a colon emoji is used" do
     it "doesn't change text in codeblock" do
       result = generate_and_parse_markdown("<span>:o:<code>:o:</code>:o:<code>:o:</code>:o:<span>:o:</span>:o:</span>")
-      expect(result).to include("<span>⭕️<code>:o:</code>⭕️<code>:o:</code>⭕️<span>⭕️</span>⭕️</span>")
+      expect(result).to include("<span>⭕<code>:o:</code>⭕<code>:o:</code>⭕<span>⭕</span>⭕</span>")
     end
   end
 
@@ -230,6 +298,37 @@ RSpec.describe MarkdownParser do
     it "permits abbr and aside tags" do
       result = generate_and_parse_markdown("<aside><abbr title=\"ol korrect\">OK</abbr><aside>")
       expect(result).to include("<aside><abbr title=\"ol korrect\">OK</abbr><aside>")
+    end
+  end
+
+  context "when word as snake case" do
+    it "doesn't change word" do
+      code_block = "word_italic_"
+      expect(generate_and_parse_markdown(code_block)).to include("word_italic_")
+    end
+  end
+
+  context "when double underline" do
+    it "renders italic" do
+      code_block = "word__italic__"
+      expect(generate_and_parse_markdown(code_block)).to include("word_<em>italic</em>_")
+    end
+  end
+
+  context "when adding syntax highlighting" do
+    it "defaults to plaintext" do
+      code_block = "```\ntext\n````"
+      expect(generate_and_parse_markdown(code_block)).to include("highlight plaintext")
+    end
+
+    it "adds correct syntax highlighting to codeblocks when the hint is not lowercase" do
+      code_block = "```Ada\nwith Ada.Directories;\n````"
+      expect(generate_and_parse_markdown(code_block)).to include("highlight ada")
+    end
+
+    it "adds correct syntax highlighting to codeblocks when the hint is lowercase" do
+      code_block = "```ada\nwith Ada.Directories;\n````"
+      expect(generate_and_parse_markdown(code_block)).to include("highlight ada")
     end
   end
 end

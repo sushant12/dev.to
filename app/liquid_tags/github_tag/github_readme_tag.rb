@@ -4,39 +4,67 @@ class GithubTag
   class GithubReadmeTag
     PARTIAL = "liquids/github_readme".freeze
 
+    attr_reader :client, :content, :options, :readme_html
+
     def initialize(link)
-      @link = parse_link(link)
-      @content = get_content(@link)
+      parsed_link = parse_link(link)
+      @options = parse_options(link)
+      @client = Octokit::Client.new(access_token: token)
+      @content = client.repository(parsed_link)
+      @readme_html = fetch_readme(parsed_link)
     end
 
     def render
       ActionController::Base.new.render_to_string(
         partial: PARTIAL,
         locals: {
-          content: @content,
-          updated_html: @updated_html
+          content: content,
+          show_readme: show_readme? && readme_html.present?,
+          readme_html: readme_html
         },
       )
     end
 
-    def parse_link(link)
-      link = ActionController::Base.helpers.strip_tags(link)
-      link.gsub(/.*github\.com\//, "").delete(" ")
-    end
-
-    def get_content(link)
-      repo_details = link.split("/")
-      raise_error if repo_details.length > 2
-      user_name = repo_details[0]
-      repo_name = repo_details[1]
-      client = Octokit::Client.new(access_token: token)
-      @readme_html = client.readme user_name + "/" + repo_name, accept: "application/vnd.github.html"
-      @readme = client.readme user_name + "/" + repo_name
-      @updated_html = clean_relative_path!(@readme_html, @readme.download_url)
-      client.repository(user_name + "/" + repo_name)
-    end
-
     private
+
+    def parse_link(link)
+      link = sanitize_link(link)
+      parsed_link = link.split(" ").first.delete(" ")
+      raise_error if parsed_link.split("/").length > 2
+
+      parsed_link
+    end
+
+    def valid_option(option)
+      option.match(/no-readme/)
+    end
+
+    def parse_options(link)
+      opts = sanitize_link(link)
+      _, *options = opts.split(" ")
+
+      validated_options = options.map { |option| valid_option(option) }.reject(&:nil?)
+      raise StandardError, "GitHub tag: `#{link}`: Invalid option - did you mean `no-readme`?" unless options.empty? || validated_options.any?
+
+      options
+    end
+
+    def show_readme?
+      options.none? "no-readme"
+    end
+
+    def fetch_readme(link)
+      readme_html = client.readme(link, accept: "application/vnd.github.html")
+      readme = client.readme(link)
+      clean_relative_path!(readme_html, readme.download_url)
+    rescue Octokit::NotFound => _e
+      nil
+    end
+
+    def sanitize_link(link)
+      link = ActionController::Base.helpers.strip_tags(link)
+      link.gsub(/.*github\.com\//, "")
+    end
 
     def raise_error
       raise StandardError, "Invalid Github Repo link"

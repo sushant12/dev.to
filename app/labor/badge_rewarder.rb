@@ -3,8 +3,8 @@ module BadgeRewarder
 
   def self.award_yearly_club_badges
     (1..3).each do |i|
-      message = "Happy DEV birthday! Can you believe it's been #{i} #{'year'.pluralize(i)} already?!"
-      badge = Badge.find_by(slug: "#{YEARS[i]}-year-club")
+      message = "Happy #{ApplicationConfig['COMMUNITY_NAME']} birthday! Can you believe it's been #{i} #{'year'.pluralize(i)} already?!"
+      badge = Badge.find_by!(slug: "#{YEARS[i]}-year-club")
       User.where("created_at < ? AND created_at > ?", i.year.ago, i.year.ago - 2.days).find_each do |user|
         achievement = BadgeAchievement.create(
           user_id: user.id,
@@ -17,15 +17,16 @@ module BadgeRewarder
   end
 
   def self.award_beloved_comment_badges
+    # ID 3 is the proper ID in prod. We should change in future to ENV var.
+    badge_id = Badge.find_by(slug: "beloved-comment")&.id || 3
     Comment.where("positive_reactions_count > ?", 24).find_each do |comment|
-      message = "You're DEV famous! [This is the comment](https://dev.to#{comment.path}) for which you are being recognized. 😄"
+      message = "You're famous! [This is the comment](https://#{ApplicationConfig['APP_DOMAIN']}#{comment.path}) for which you are being recognized. 😄"
       achievement = BadgeAchievement.create(
         user_id: comment.user_id,
-        badge_id: Badge.find_by(slug: "beloved-comment")&.id || 3,
+        badge_id: badge_id,
         rewarding_context_message_markdown: message,
       )
       comment.user.save if achievement.valid?
-      # ID 3 is the proper ID in prod. We should change in future to ENV var.
     end
   end
 
@@ -62,7 +63,7 @@ module BadgeRewarder
 
   def self.award_contributor_badges_from_github(since = 1.day.ago, message_markdown = "Thank you so much for your contributions!")
     client = Octokit::Client.new
-    badge = Badge.find_by(slug: "dev-contributor")
+    badge = Badge.find_by!(slug: "dev-contributor")
     ["thepracticaldev/dev.to", "thepracticaldev/DEV-ios", "thepracticaldev/DEV-Android"].each do |repo|
       commits = client.commits repo, since: since.iso8601
       authors_uids = commits.map { |commit| commit.author.id }
@@ -77,7 +78,7 @@ module BadgeRewarder
   def self.award_streak_badge(num_weeks)
     article_user_ids = Article.published.where("published_at > ? AND score > ?", 1.week.ago, -25).pluck(:user_id) # No cred for super low quality
     message = if num_weeks == 16
-                "16 weeks! You've achieved the longest DEV writing streak possible. This makes you eligible for special quests in the future. Keep up the amazing contributions to our community!"
+                "16 weeks! You've achieved the longest #{ApplicationConfig['COMMUNITY_NAME']} writing streak possible. This makes you eligible for special quests in the future. Keep up the amazing contributions to our community!"
               else
                 "Congrats on achieving this streak! Consistent writing is hard. The next streak badge you can get is the #{num_weeks * 2} Week Badge. 😉"
               end
@@ -95,10 +96,11 @@ module BadgeRewarder
   end
 
   def self.award_badges(usernames, slug, message_markdown)
+    badge_id = Badge.find_by!(slug: slug).id
     User.where(username: usernames).find_each do |user|
       BadgeAchievement.create(
         user_id: user.id,
-        badge_id: Badge.find_by(slug: slug).id,
+        badge_id: badge_id,
         rewarding_context_message_markdown: message_markdown,
       )
       user.save

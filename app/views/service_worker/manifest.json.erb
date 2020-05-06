@@ -1,0 +1,26 @@
+{
+  "name": "<%= community_qualified_name %>",
+  "short_name": "<%= ApplicationConfig["APP_DOMAIN"] %>",
+  "description": "<%= SiteConfig.community_description %>",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "homepage_url": "<%= app_url %>",
+  "icons": [{
+    "src": "<%= ApplicationController.helpers.cloudinary(SiteConfig.logo_png, 192, "png") %>",
+    "sizes": "192x192",
+    "type": "image/png",
+    "purpose": "any maskable"
+  }, {
+    "src": "<%= ApplicationController.helpers.cloudinary(SiteConfig.logo_png, 128, "png") %>",
+    "sizes": "128x128",
+    "type": "image/png",
+    "purpose": "any maskable"
+  }, {
+    "src": "<%= ApplicationController.helpers.cloudinary(SiteConfig.logo_png, 512, "png") %>",
+    "sizes": "512x512",
+    "type": "image/png",
+    "purpose": "any maskable"
+  }]
+}

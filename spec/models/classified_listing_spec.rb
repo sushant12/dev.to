@@ -1,9 +1,13 @@
 require "rails_helper"
 
 RSpec.describe ClassifiedListing, type: :model do
-  let(:classified_listing) { create(:classified_listing, user_id: user.id) }
-  let(:user) { create(:user) }
-  let(:organization) { create(:organization) }
+  let_it_be(:user) { create(:user) }
+  let_it_be(:organization) { create(:organization) }
+  let(:classified_listing) { create(:classified_listing, user: user) }
+
+  # TODO: Remove setting of default parser from a model's callback
+  # This may apply default parser on area that should not use it.
+  after { ActsAsTaggableOn.default_parser = ActsAsTaggableOn::DefaultParser }
 
   it { is_expected.to validate_presence_of(:title) }
   it { is_expected.to validate_presence_of(:body_markdown) }
@@ -65,6 +69,23 @@ RSpec.describe ClassifiedListing, type: :model do
 
       expect { classified_listing.destroy }.not_to change(Credit, :count)
       expect(credit.reload.purchase).to be_nil
+    end
+  end
+
+  describe "#after_commit" do
+    it "on update enqueues worker to index tag to elasticsearch" do
+      classified_listing.save
+
+      sidekiq_assert_enqueued_with(job: Search::IndexWorker, args: [described_class.to_s, classified_listing.id]) do
+        classified_listing.save
+      end
+    end
+
+    it "on destroy enqueues job to delete classified_listing from elasticsearch" do
+      classified_listing.save
+      sidekiq_assert_enqueued_with(job: Search::RemoveFromIndexWorker, args: [described_class::SEARCH_CLASS.to_s, classified_listing.id]) do
+        classified_listing.destroy
+      end
     end
   end
 end

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe CodepenTag, type: :liquid_template do
+RSpec.describe CodepenTag, type: :liquid_tag do
   describe "#link" do
     let(:codepen_link) { "https://codepen.io/twhite96/pen/XKqrJX" }
     let(:codepen_team_link) { "https://codepen.io/team/keyframers/pen/ZMRMEw" }
@@ -67,6 +67,15 @@ RSpec.describe CodepenTag, type: :liquid_template do
       xss_links.each do |link|
         expect { generate_new_liquid(link) }.to raise_error(StandardError)
       end
+    end
+
+    it "rejects multiline XSS attempt" do
+      xss_multiline_link = <<~XSS
+        javascript:exploit_code();/*
+        #{codepen_link}
+        */
+      XSS
+      expect { generate_new_liquid(xss_multiline_link) }.to raise_error(StandardError)
     end
   end
 end

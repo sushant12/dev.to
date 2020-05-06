@@ -19,7 +19,6 @@ then
 	echo "|"
 	echo "| Welcome to DEV.TO interactive docker demo setup guide."
 	echo "|"
-	echo "| For this container to work, we will need at minimum ALGOLIA API keys"
 	echo "| For logins to work, we will need either GITHUB or TWITTER API keys"
 	echo "|"
 	echo "| See ( https://docs.dev.to/getting-started/config-env/ ) "
@@ -28,30 +27,6 @@ then
 	echo "| Once you got your various API keys, please proceed to the next step"
 	echo "|"
 	echo "|---"
-
-	echo "|---"
-	echo "| Setting up ALGOLIASEARCH keys (required)"
-	echo "|---"
-	echo -n "| Please indicate your ALGOLIASEARCH_APPLICATION_ID : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export ALGOLIASEARCH_APPLICATION_ID="$INPUT_KEY"
-	fi
-
-	echo -n "| Please indicate your ALGOLIASEARCH_SEARCH_ONLY_KEY : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export ALGOLIASEARCH_SEARCH_ONLY_KEY="$INPUT_KEY"
-	fi
-
-	echo -n "| Please indicate your ALGOLIASEARCH_API_KEY (aka admin key) : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export ALGOLIASEARCH_API_KEY="$INPUT_KEY"
-	fi
 
 	echo "|---"
 	echo "| Setting up GITHUB keys"
@@ -69,31 +44,6 @@ then
 	if [ ! -z "$INPUT_KEY" ]
 	then
 		export GITHUB_SECRET="$INPUT_KEY"
-	fi
-
-	echo -n "| Please indicate your GITHUB_TOKEN : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export GITHUB_TOKEN="$INPUT_KEY"
-	fi
-
-	echo "|---"
-	echo "| Setting up TWITTER keys"
-	echo "| (OPTIONAL, leave blank and press enter to skip)"
-	echo "|---"
-	echo -n "| Please indicate your TWITTER_ACCESS_TOKEN : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export TWITTER_ACCESS_TOKEN="$INPUT_KEY"
-	fi
-
-	echo -n "| Please indicate your TWITTER_ACCESS_TOKEN_SECRET : "
-	read INPUT_KEY
-	if [ ! -z "$INPUT_KEY" ]
-	then
-		export TWITTER_ACCESS_TOKEN_SECRET="$INPUT_KEY"
 	fi
 
 	echo -n "| Please indicate your TWITTER_KEY : "
@@ -140,7 +90,7 @@ echo "#"
 echo "# RUN_MODE can either be the following"
 echo "#"
 echo "# - 'DEV'  : Start up the container into bash, with a quick start guide"
-echo "# - 'DEMO' : Start up the container, and run dev.to (requires ALGOLIA environment variables)"
+echo "# - 'DEMO' : Start up the container, and run dev.to"
 echo "# - 'RESET-DEV'   : Resets postgresql and upload data directory for a clean deployment, before running as DEV mode"
 echo "# - 'RESET-DEMO'  : Resets postgresql and upload data directory for a clean deployment, before running as DEMO mode"
 echo "# - 'INTERACTIVE-DEMO' : Runs this script in 'interactive' mode to setup the 'DEMO'"
@@ -148,14 +98,11 @@ echo "#"
 echo "# So for example to run a development container in bash it's simply"
 echo "# './docker-run.sh DEV'"
 echo "#"
-echo "# To run a simple demo, with some dummy data (replace <?> with the actual keys)"
-echo "# './docker-run.sh DEMO -e ALGOLIASEARCH_APPLICATION_ID=<?> -e ALGOLIASEARCH_SEARCH_ONLY_KEY=<?> -e ALGOLIASEARCH_API_KEY=<?>'"
-echo "#"
 echo "# Finally to run a working demo, you will need to provide either..."
-echo "# './docker-run.sh .... -e GITHUB_KEY=<?> -e GITHUB_SECRET=<?> -e GITHUB_TOKEN=<?>"
+echo "# './docker-run.sh .... -e GITHUB_KEY=<?> -e GITHUB_SECRET=<?>"
 echo "#"
 echo "# And / Or ..."
-echo "# './docker-run.sh .... -e TWITTER_ACCESS_TOKEN=<?> -e TWITTER_ACCESS_TOKEN_SECRET=<?> -e TWITTER_KEY=<?> -e TWITTER_SECRET=<?>"
+echo "# './docker-run.sh .... -e TWITTER_KEY=<?> -e TWITTER_SECRET=<?>"
 echo "#"
 echo "# Note that all of this can also be configured via ENVIRONMENT variables prior to running the script"
 echo "#"
@@ -258,17 +205,10 @@ echo "#---"
 # ENV variables to support forwarding, and the compulsory list from bash script to docker (if detected)
 #
 ENV_FORWARDING_LIST=(
-	# ALGOLIASEARCH (required for deployment)
-	"ALGOLIASEARCH_APPLICATION_ID"
-	"ALGOLIASEARCH_SEARCH_ONLY_KEY"
-	"ALGOLIASEARCH_API_KEY"
 	# login via GITHUB
 	"GITHUB_KEY"
 	"GITHUB_SECRET"
-	"GITHUB_TOKEN"
 	# login via TWITTER
-	"TWITTER_ACCESS_TOKEN"
-	"TWITTER_ACCESS_TOKEN_SECRET"
 	"TWITTER_KEY"
 	"TWITTER_SECRET"
 	# PUSHER integration
@@ -278,12 +218,6 @@ ENV_FORWARDING_LIST=(
 	"PUSHER_CLUSTER"
 	# @TODO : anything else to pass forward? S3<?>
 )
-ENV_FORWARDING_DEMO_COMPULSORY_LIST=(
-	# ALGOLIASEARCH (required for deployment)
-	"ALGOLIASEARCH_APPLICATION_ID"
-	"ALGOLIASEARCH_SEARCH_ONLY_KEY"
-	"ALGOLIASEARCH_API_KEY"
-)
 
 #
 # dev.to docker command flags to pass forward
@@ -291,11 +225,11 @@ ENV_FORWARDING_DEMO_COMPULSORY_LIST=(
 DEVTO_DOCKER_FLAGS="$ARG_ARRAY_STR"
 
 #
-# Scan for ENV variabels to forward
+# Scan for ENV variables to forward
 #
 echo "#---"
 echo "# Lets scan for dev.to environment variables that will automatically be passed"
-echo "# forward into the continaer if present (very useful for CI testing)"
+echo "# forward into the container if present (very useful for CI testing)"
 echo "#---"
 for i in "${ENV_FORWARDING_LIST[@]}"
 do
@@ -314,25 +248,6 @@ do
 
 	echo "[skipped env variable]  - $i"
 done
-
-#
-# Check for DEMO compulsory list
-#
-if [[ "$RUN_MODE" == *"DEMO"* ]]
-then
-	# Iterate compulsory list
-	for i in "${ENV_FORWARDING_DEMO_COMPULSORY_LIST[@]}"
-	do
-		# Exit if not found
-		if [[ $DEVTO_DOCKER_FLAGS != *"$i"* ]]
-		then
-			echo "#---"
-			echo "# [FATAL ERROR] Missing required DEMO env setting / argument for $i (see example above)"
-			echo "#---"
-			exit 3
-		fi
-	done
-fi
 
 #
 # Stop and remove existing containers
@@ -419,6 +334,7 @@ RETRIES=12
 until docker exec dev-to-postgres psql -U devto -d PracticalDeveloper_development -c "select 1" > /dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
 	echo -n "."
 	sleep 5
+  RETRIES=$((RETRIES - 1))
 done
 echo ""
 echo "# Wait completed, moving on ... "
@@ -477,7 +393,7 @@ echo "#"
 echo "# this commonly takes 2 ~ 10 minutes, basically, a very long time .... =[ "
 
 # Side note, looped to give 4 set of distinct lines
-# espeially if long wait times occur (to make it more manageable)
+# especially if long wait times occur (to make it more manageable)
 for i in 1 2 3 4
 do
 	RETRIES=30
@@ -485,6 +401,7 @@ do
 	until docker exec dev-to-app curl -I --max-time 5 -f http://localhost:3000/ > /dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
 		echo -n "."
 		sleep 5
+    RETRIES=$((RETRIES - 1))
 	done
 	echo ""
 done

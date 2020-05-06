@@ -17,8 +17,12 @@ module SocialImageHelper
     listing_social_preview_url(listing, format: :png)
   end
 
-  def article_social_image_url(article)
-    Articles::SocialImage.new(article).url
+  def article_social_image_url(article, **options)
+    Articles::SocialImage.new(article, options).url
+  end
+
+  def comment_social_image_url(comment)
+    comment_social_preview_url(comment, format: :png)
   end
 
   def use_new_social_url?(resource)

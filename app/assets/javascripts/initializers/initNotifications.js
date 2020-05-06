@@ -3,6 +3,7 @@ function initNotifications() {
   markNotificationsAsRead();
   initReactions();
   listenForNotificationsBellClick();
+  initFilter();
   initPagination();
   initLoadMoreButton();
 }
@@ -47,44 +48,16 @@ function fetchNotificationsCount() {
     document.getElementById('notifications-container') == null &&
     checkUserLoggedIn()
   ) {
-    var xmlhttp;
-    if (window.XMLHttpRequest) {
-      xmlhttp = new XMLHttpRequest();
-    } else {
-      xmlhttp = new ActiveXObject('Microsoft.XMLHTTP');
+    // Prefetch notifications page
+    if (instantClick) {
+      InstantClick.removeExpiredKeys('force');
+      setTimeout(function() {
+        InstantClick.preload(
+          document.getElementById('notifications-link').href,
+          'force',
+        );
+      }, 30);
     }
-    xmlhttp.onreadystatechange = function() {
-      if (xmlhttp.readyState == XMLHttpRequest.DONE) {
-        var count = xmlhttp.response;
-        if (isNaN(count)) {
-          document
-            .getElementById('notifications-number')
-            .classList.remove('showing');
-        } else if (count != '0' && count != undefined && count != '') {
-          document.getElementById('notifications-number').innerHTML =
-            xmlhttp.response;
-          document
-            .getElementById('notifications-number')
-            .classList.add('showing');
-          if (instantClick) {
-            InstantClick.removeExpiredKeys('force');
-            setTimeout(function() {
-              InstantClick.preload(
-                document.getElementById('notifications-link').href,
-                'force',
-              );
-            }, 30);
-          }
-        } else {
-          document
-            .getElementById('notifications-number')
-            .classList.remove('showing');
-        }
-      }
-    };
-
-    xmlhttp.open('GET', '/notifications/counts', true);
-    xmlhttp.send();
   }
 }
 
@@ -150,9 +123,30 @@ function listenForNotificationsBellClick() {
     document.getElementById('notifications-link').onclick = function() {
       document
         .getElementById('notifications-number')
-        .classList.remove('showing');
+        .classList.add('hidden');
     };
   }, 180);
+}
+
+function initFilter() {
+  var navFilterMenu = document.getElementsByClassName("notifications-filter__dropdown__menu");
+  var navFilterSelect = document.getElementById("notifications-filter__select");
+
+  for (var i = 0; i < navFilterMenu.length; i++) {
+    document.getElementById("notifications-filter__menu-overlay").classList.remove("showing");
+  }
+
+  if (navFilterSelect) {
+    navFilterSelect.onclick = function(){
+      document.getElementById("notifications-filter__menu-overlay").classList.add("showing");
+    }
+  }
+
+  for (var i = 0; i < navFilterMenu.length; i++) {
+    navFilterMenu[i].onclick = function(event){
+      document.getElementById("notifications-filter__menu-overlay").classList.remove("showing");
+    }
+  }
 }
 
 function initPagination() {

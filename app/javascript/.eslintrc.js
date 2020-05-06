@@ -23,12 +23,30 @@ module.exports = {
     ],
     'import/prefer-default-export': 'off',
     'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    'jsx-a11y/label-has-associated-control': [
+      'error',
+      {
+        required: {
+          some: ['nesting', 'id'],
+        },
+      },
+    ],
+    'react/jsx-no-target-blank': [2, { enforceDynamicLinks: 'always' }],
+    'import/no-unresolved': [
+      'error',
+      {
+        ignore: ['@crayons', '@utilities'],
+      },
+    ],
   },
   globals: {
+    getCsrfToken: false,
+    sendFetch: false,
     InstantClick: false,
     filterXSS: false,
     Pusher: false,
-    algoliasearch: false,
     ga: false,
+    Honeybadger: false,
+    AndroidBridge: false,
   },
 };

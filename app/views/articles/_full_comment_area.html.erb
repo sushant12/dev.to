@@ -1,9 +1,12 @@
 <% cache("whole-comment-area-#{@article.id}-#{@article.last_comment_at}-#{@article.show_comments}", expires_in: 2.hours) do %>
-  <div id="comments" style="margin-top: -56px;padding-bottom:56px;position:relative;z-index:-100" data-updated-at="<%= Time.current %>"></div>
-  <% if @article.show_comments %>
-    <div class="comments-container-container">
+  <div id="comments" data-updated-at="<%= Time.current %>">
+    <% if @article.show_comments %>
+      <div class="relative flex justify-between items-center mx-2 s:mx-7 mb-2" style="min-height:40px;margin-top:15px;">
+        <span class="fs-2xl fw-bold">Discussion</span>
+        <div id="comment-subscription"></div>
+      </div>
       <div
-        class="comments-container"
+        class="comments-container mx-2 s:mx-7"
         id="comments-container"
         data-commentable-id="<%= @article.id %>"
         data-commentable-type="Article">
@@ -23,7 +26,7 @@
       <div class="show-comments-footer">
         <%= render "articles/comments_actions" %>
       </div>
-    </div>
-  <% end %>
+    <% end %>
+  </div>
 <% end %>
 <% return if @warm_only %>

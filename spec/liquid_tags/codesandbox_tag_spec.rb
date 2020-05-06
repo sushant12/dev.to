@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe CodesandboxTag, type: :liquid_template do
+RSpec.describe CodesandboxTag, type: :liquid_tag do
   describe "#id" do
     let(:valid_id) { "22qaa1wcxr" }
     let(:valid_id_with_initialpath) { "68jkdlsaie initialpath=/initial/path/file.js" }
@@ -81,7 +81,7 @@ RSpec.describe CodesandboxTag, type: :liquid_template do
 
     it "rejects bad ids" do
       bad_ids.each do |id|
-        expect { generate_tag(id) } .to raise_error(StandardError)
+        expect { generate_tag(id) }.to raise_error(StandardError)
       end
     end
   end

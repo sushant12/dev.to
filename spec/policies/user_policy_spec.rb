@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe UserPolicy, type: :policy do
   subject { described_class.new(user, other_user) }
 
-  let(:other_user) { build_stubbed(:user) }
+  let(:other_user) { create(:user) }
 
   context "when user is not signed-in" do
     let(:user) { nil }
@@ -15,7 +15,7 @@ RSpec.describe UserPolicy, type: :policy do
     let(:user) { other_user }
 
     permitted_actions = %i[
-      edit update onboarding_update join_org dashboard_show remove_association destroy
+      edit update onboarding_update join_org dashboard_show remove_identity destroy
     ]
 
     it { is_expected.to permit_actions(permitted_actions) }

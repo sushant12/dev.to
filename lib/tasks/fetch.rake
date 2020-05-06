@@ -2,19 +2,8 @@ desc "This task is called by the Heroku scheduler add-on"
 
 task get_podcast_episodes: :environment do
   Podcast.published.select(:id).find_each do |podcast|
-    Podcasts::GetEpisodesJob.perform_later(podcast_id: podcast.id, limit: 5)
+    Podcasts::GetEpisodesWorker.perform_async(podcast_id: podcast.id, limit: 5)
   end
-end
-
-task periodic_cache_bust: :environment do
-  cache_buster = CacheBuster.new
-  cache_buster.bust("/feed.xml")
-  cache_buster.bust("/badge")
-  cache_buster.bust("/shecoded")
-end
-
-task hourly_bust: :environment do
-  CacheBuster.new.bust("/")
 end
 
 task fetch_all_rss: :environment do
@@ -30,16 +19,10 @@ end
 task expire_old_listings: :environment do
   ClassifiedListing.where("bumped_at < ?", 30.days.ago).each do |listing|
     listing.update(published: false)
-    listing.remove_from_index!
   end
   ClassifiedListing.where("expires_at = ?", Time.zone.today).each do |listing|
     listing.update(published: false)
-    listing.remove_from_index!
   end
-end
-
-task clear_memory_if_too_high: :environment do
-  Rails.cache.clear if Rails.cache.stats.flatten[1]["bytes"].to_i > 9_650_000_000
 end
 
 task save_nil_hotness_scores: :environment do
@@ -51,51 +34,21 @@ task github_repo_fetch_all: :environment do
 end
 
 task send_email_digest: :environment do
-  return if Time.current.wday < 3
-
-  EmailDigest.send_periodic_digest_email
+  if Time.current.wday >= 3
+    EmailDigest.send_periodic_digest_email
+  end
 end
 
-task award_badges: :environment do
-  BadgeRewarder.award_yearly_club_badges
-  BadgeRewarder.award_beloved_comment_badges
-  BadgeRewarder.award_streak_badge(4)
-  BadgeRewarder.award_streak_badge(8)
-  BadgeRewarder.award_streak_badge(16)
-end
-
-# rake award_top_seven_badges["ben jess peter mac liana andy"]
-task :award_top_seven_badges, [:arg1] => :environment do |_t, args|
-  usernames = args[:arg1].split(" ")
-  puts "Awarding top-7 badges to #{usernames}"
-  BadgeRewarder.award_top_seven_badges(usernames)
-  puts "Done!"
-end
-
-# rake award_contributor_badges["ben jess peter mac liana andy"]
-task :award_contributor_badges, [:arg1] => :environment do |_t, args|
-  usernames = args[:arg1].split(" ")
-  puts "Awarding dev-contributor badges to #{usernames}"
-  BadgeRewarder.award_contributor_badges(usernames)
-  puts "Done!"
-end
-
-# rake award_fab_five_badges["ben jess peter mac liana andy"]
-task :award_fab_five_badges, [:arg1] => :environment do |_t, args|
-  usernames = args[:arg1].split(" ")
-  puts "Awarding fab 5 badges to #{usernames}"
-  BadgeRewarder.award_fab_five_badges(usernames)
-  puts "Done!"
-end
-
-# this task is meant to be scheduled daily
-task award_contributor_badges_from_github: :environment do
-  BadgeRewarder.award_contributor_badges_from_github
+# This task is meant to be scheduled daily
+task prune_old_field_tests: :environment do
+  # For rolling ongoing experiemnts, we remove old experiment memberships
+  # So that they can be re-tested.
+  FieldTests::PruneOldExperimentsWorker.perform_async
 end
 
 task remove_old_html_variant_data: :environment do
-  HtmlVariantTrial.where("created_at < ?", 1.week.ago).destroy_all
-  HtmlVariantSuccess.where("created_at < ?", 1.week.ago).destroy_all
+  HtmlVariantTrial.where("created_at < ?", 2.weeks.ago).destroy_all
+  HtmlVariantSuccess.where("created_at < ?", 2.weeks.ago).destroy_all
   HtmlVariant.find_each do |html_variant|
     html_variant.calculate_success_rate! if html_variant.html_variant_successes.any?
   end
